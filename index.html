@@ -551,7 +551,7 @@
         </div>
         <div class="field">
           <label>Cerebras API Key <span style="opacity:.5">(better multi-speaker analysis)</span></label>
-          <input type="password" id="cerebrasKey" placeholder="csk-..." value="csk-kh2xv6xmrcnmy588rwevh3ek89nttjdvn4hhetvfjp698eje" />
+          <input type="password" id="cerebrasKey" placeholder="csk-..." value="csk-cr3jrcvxpn88ndf4crykt3vd9tnnc6xh569m6e42pf666cdk" />
         </div>
         <div class="field">
           <label>Analysis Provider</label>
@@ -560,12 +560,9 @@
             <option value="groq">Groq</option>
           </select>
         </div>
-        <div class="field">
-          <label>Analysis Model</label>
-          <select id="analysisMdl">
-            <option value="llama3.1-70b" selected>Llama 3.1 70B — Best accuracy</option>
-            <option value="llama3.1-8b">Llama 3.1 8B — Fastest</option>
-          </select>
+        <div class="field" id="modelFieldWrap">
+          <label>Analysis Model <span id="modelHint" style="opacity:.5;font-size:.58rem"></span></label>
+          <select id="analysisMdl"></select>
         </div>
         <div class="field">
           <label>Transcription Model</label>
@@ -660,16 +657,28 @@ $('providerSel').addEventListener('change', e => localStorage.setItem('tgh_provi
 updateModelList();
 
 // ── MODEL LIST ────────────────────────────────────────────────────────────
+// Cerebras model IDs: https://inference-docs.cerebras.ai/api-reference/chat
+const CEREBRAS_MODELS = [
+  { id: 'qwen3-235b',  label: 'Qwen 3 235B Instruct — Best analysis' },
+  { id: 'glm-4-9b',    label: 'Z.ai GLM 4.7' },
+  { id: 'llama3.1-8b', label: 'Llama 3.1 8B — Fastest' },
+];
+const GROQ_MODELS = [
+  { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B Versatile' },
+  { id: 'llama3-8b-8192',          label: 'Llama 3 8B' },
+  { id: 'mixtral-8x7b-32768',      label: 'Mixtral 8x7B' },
+  { id: 'gemma2-9b-it',            label: 'Gemma 2 9B' },
+];
+
 function updateModelList() {
   const provider = $('providerSel').value;
-  const sel = $('analysisMdl');
-  sel.innerHTML = provider === 'cerebras'
-    ? `<option value="llama3.1-70b" selected>Llama 3.1 70B — Best accuracy</option>
-       <option value="llama3.1-8b">Llama 3.1 8B — Fastest</option>`
-    : `<option value="llama-3.3-70b-versatile" selected>Llama 3.3 70B Versatile</option>
-       <option value="llama3-8b-8192">Llama 3 8B</option>
-       <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
-       <option value="gemma2-9b-it">Gemma 2 9B</option>`;
+  const models   = provider === 'cerebras' ? CEREBRAS_MODELS : GROQ_MODELS;
+  const sel      = $('analysisMdl');
+  sel.innerHTML  = models.map((m, i) =>
+    `<option value="${m.id}"${i === 0 ? ' selected' : ''}>${m.label}</option>`
+  ).join('');
+  const hint = $('modelHint');
+  if (hint) hint.textContent = provider === 'cerebras' ? '(Cerebras)' : '(Groq)';
 }
 
 
