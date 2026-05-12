@@ -939,6 +939,38 @@ function drawWaveform(c, buf, color) {
   cx.stroke();
 }
 
+// ── JSON EXTRACTION HELPER ───────────────────────────────────────────────
+function extractJSON(raw) {
+  // Strip markdown fences
+  let text = raw.replace(/```json|```/g, '').trim();
+  // Find outermost { ... }
+  const start = text.indexOf('{');
+  const end   = text.lastIndexOf('}');
+  if (start === -1 || end === -1) return null;
+  text = text.slice(start, end + 1);
+  // Clean parse
+  try { return JSON.parse(text); } catch(_) {}
+  // Sanitize: control chars, smart quotes, trailing commas
+  text = text
+    .replace(/[\x00-\x1F\x7F]/g, ' ')
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "\'")
+    .replace(/,\s*([}\]])/g, '$1');
+  try { return JSON.parse(text); } catch(_) {}
+  // Manual extraction fallback
+  try {
+    const sm = text.match(/"sources"\s*:\s*(\[[\s\S]*?\])/);
+    const mm = text.match(/"summary"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    const cm = text.match(/"speakerCount"\s*:\s*(\d+)/);
+    if (!sm) return null;
+    return {
+      sources: JSON.parse(sm[1]),
+      summary: mm ? mm[1] : '',
+      speakerCount: cm ? parseInt(cm[1]) : 1
+    };
+  } catch(_) { return null; }
+}
+
 // ── GROQ AI ANALYSIS ─────────────────────────────────────────────────────
 async function analyzeWithClaude(transcription) {
   const key   = $('groqKey').value.trim();
@@ -946,26 +978,19 @@ async function analyzeWithClaude(transcription) {
 
   if (!key) { showAiFallback('Groq API key required for AI source identification.'); return; }
 
-  const prompt = `You are an expert audio analyst. Analyze this transcription and identify every distinct sound source or speaker present.
+  const safeText = transcription.slice(0, 2000).replace(/"/g, "'").replace(/[\x00-\x1F]/g, ' ');
+  const prompt = `Analyze this audio transcription. Respond with ONLY a JSON object, nothing else before or after it.
 
-Return ONLY a raw JSON object — no markdown, no backticks, no extra text. Use exactly this schema:
-{
-  "sources": [
-    {
-      "name": "descriptive name",
-      "type": "voice|music|environment|noise",
-      "icon": "single relevant emoji",
-      "description": "1-2 sentence description of this source"
-    }
-  ],
-  "speakerCount": <integer, number of distinct human voices>,
-  "summary": "2-3 sentence summary of the audio content and acoustic environment"
-}
+Schema (use exact field names):
+{"sources":[{"name":"string","type":"voice or music or environment or noise","icon":"emoji","description":"string"}],"speakerCount":1,"summary":"string"}
 
-If multiple speakers are detected, list each as a separate voice source. Do not include any text outside the JSON object.
+Rules:
+- type must be exactly one of: voice, music, environment, noise
+- Keep all string values short (under 100 chars), avoid quotes inside strings
+- List each distinct speaker or sound source as a separate entry
+- Do NOT wrap in markdown or add any text outside the JSON
 
-Transcription:
-"${transcription.slice(0, 3000)}"`;
+Transcription: ${safeText}`;
 
   try {
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -990,10 +1015,10 @@ Transcription:
       throw new Error(err.error?.message || `HTTP ${res.status}`);
     }
 
-    const data    = await res.json();
-    const raw     = data.choices?.[0]?.message?.content || '';
-    const cleaned = raw.replace(/```json|```/g, '').trim();
-    const analysis = JSON.parse(cleaned);
+    const data  = await res.json();
+    const raw   = data.choices?.[0]?.message?.content || '';
+    const analysis = extractJSON(raw);
+    if (!analysis) throw new Error('Could not parse AI response as JSON');
     renderAiSources(analysis);
 
   } catch(e) {
