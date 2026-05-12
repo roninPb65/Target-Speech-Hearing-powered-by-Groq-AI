@@ -654,8 +654,6 @@ $('providerSel').value = localStorage.getItem('tgh_provider') || 'cerebras';
 $('groqKey').addEventListener('change',     e => localStorage.setItem('tgh_groq',      e.target.value));
 $('cerebrasKey').addEventListener('change', e => localStorage.setItem('tgh_cerebras',  e.target.value));
 $('providerSel').addEventListener('change', e => localStorage.setItem('tgh_provider',  e.target.value));
-updateModelList();
-
 // ── MODEL LIST ────────────────────────────────────────────────────────────
 // Cerebras model IDs: https://inference-docs.cerebras.ai/api-reference/chat
 const CEREBRAS_MODELS = [
@@ -680,6 +678,8 @@ function updateModelList() {
   const hint = $('modelHint');
   if (hint) hint.textContent = provider === 'cerebras' ? '(Cerebras)' : '(Groq)';
 }
+
+updateModelList();
 
 
 // ── CONFIG TOGGLE ────────────────────────────────────────────────────────
