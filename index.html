@@ -656,10 +656,16 @@ $('cerebrasKey').addEventListener('change', e => localStorage.setItem('tgh_cereb
 $('providerSel').addEventListener('change', e => localStorage.setItem('tgh_provider',  e.target.value));
 // ── MODEL LIST ────────────────────────────────────────────────────────────
 // Cerebras model IDs: https://inference-docs.cerebras.ai/api-reference/chat
+// const CEREBRAS_MODELS = [
+//   { id: 'qwen3-235b',  label: 'Qwen 3 235B Instruct — Best analysis' },
+//   { id: 'glm-4-9b',    label: 'Z.ai GLM 4.7' },
+//   { id: 'llama3.1-8b', label: 'Llama 3.1 8B — Fastest' },
+// ];
+
 const CEREBRAS_MODELS = [
-  { id: 'qwen3-235b',  label: 'Qwen 3 235B Instruct — Best analysis' },
-  { id: 'glm-4-9b',    label: 'Z.ai GLM 4.7' },
-  { id: 'llama3.1-8b', label: 'Llama 3.1 8B — Fastest' },
+  { id: 'qwen-max',       label: 'Qwen 3 235B Instruct — Best analysis' },
+  { id: 'glm-4',          label: 'Z.ai GLM 4.7' },
+  { id: 'llama-3-8b',     label: 'Llama 3.1 8B — Fastest' },
 ];
 const GROQ_MODELS = [
   { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B Versatile' },
