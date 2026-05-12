@@ -181,6 +181,7 @@
       outline: none;
       border-color: var(--cyan);
     }
+    .field input[list] { cursor: text; }
     .field input::placeholder { color: var(--text-dim); }
     .field select option { background: #111827; }
 
@@ -565,7 +566,8 @@
             <span>Analysis Model <span id="modelHint" style="opacity:.5;font-size:.58rem"></span></span>
             <button onclick="fetchCerebrasModels()" id="fetchModelsBtn" style="font-family:var(--font-m);font-size:.62rem;background:rgba(0,229,255,.08);border:1px solid rgba(0,229,255,.25);color:var(--cyan);padding:2px 10px;border-radius:4px;cursor:pointer;transition:all .2s;" onmouseover="this.style.background='rgba(0,229,255,.15)'" onmouseout="this.style.background='rgba(0,229,255,.08)'">⟳ Fetch Models</button>
           </label>
-          <select id="analysisMdl"></select>
+          <input type="text" id="analysisMdl" list="modelSuggestions" placeholder="Type or fetch model ID…" autocomplete="off" />
+          <datalist id="modelSuggestions"></datalist>
           <div id="fetchStatus" style="font-size:.62rem;margin-top:4px;display:none"></div>
         </div>
         <div class="field">
@@ -661,9 +663,10 @@ $('providerSel').addEventListener('change', e => localStorage.setItem('tgh_provi
 // ── MODEL LIST ────────────────────────────────────────────────────────────
 // Cerebras model IDs: https://inference-docs.cerebras.ai/api-reference/chat
 const CEREBRAS_MODELS = [
-  { id: 'qwen3-235b',  label: 'Qwen 3 235B Instruct — Best analysis' },
-  { id: 'glm-4-9b',    label: 'Z.ai GLM 4.7' },
-  { id: 'llama3.1-8b', label: 'Llama 3.1 8B — Fastest' },
+  { id: 'qwen-3-235b-a22b-instruct-2507', label: 'Qwen 3 235B Instruct (Preview) — Best analysis' },
+  { id: 'zai-glm-4.7',                   label: 'Z.ai GLM 4.7 (Preview) — 355B' },
+  { id: 'gpt-oss-120b',                  label: 'OpenAI GPT OSS — 120B ~3000 t/s' },
+  { id: 'llama3.1-8b',                   label: 'Llama 3.1 8B — Fastest ~2200 t/s' },
 ];
 const GROQ_MODELS = [
   { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B Versatile' },
@@ -675,10 +678,10 @@ const GROQ_MODELS = [
 function updateModelList() {
   const provider = $('providerSel').value;
   const models   = provider === 'cerebras' ? CEREBRAS_MODELS : GROQ_MODELS;
-  const sel      = $('analysisMdl');
-  sel.innerHTML  = models.map((m, i) =>
-    `<option value="${m.id}"${i === 0 ? ' selected' : ''}>${m.label}</option>`
-  ).join('');
+  const input    = $('analysisMdl');
+  const dl       = $('modelSuggestions');
+  if (dl) dl.innerHTML = models.map(m => `<option value="${m.id}">${m.label}</option>`).join('');
+  if (input && models.length) input.value = models[0].id;
   const hint = $('modelHint');
   if (hint) hint.textContent = provider === 'cerebras' ? '(Cerebras)' : '(Groq)';
 }
@@ -722,11 +725,11 @@ async function fetchCerebrasModels() {
 
     if (!models.length) throw new Error('No models returned');
 
-    // Rebuild dropdown with real IDs
-    const sel = $('analysisMdl');
-    sel.innerHTML = models.map((m, i) =>
-      `<option value="${m.id}"${i===0?' selected':''}>${m.id}</option>`
-    ).join('');
+    // Populate datalist + set first model as current value
+    const dl  = $('modelSuggestions');
+    const inp = $('analysisMdl');
+    if (dl)  dl.innerHTML = models.map(m => `<option value="${m.id}">${m.id}</option>`).join('');
+    if (inp && models.length) inp.value = models[0].id;
 
     // Update the global list so provider switch still works
     if (provider === 'cerebras') {
