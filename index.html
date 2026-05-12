@@ -385,7 +385,108 @@
       padding: 14px; font-size: .78rem; color: var(--text-dim);
     }
 
-    .ai-summary {
+    
+/* Rich source cards */
+.src-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  transition: border-color .2s;
+}
+.src-card:hover { border-color: rgba(0,229,255,.25); }
+
+.src-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 14px 10px;
+}
+.src-icon { font-size: 1.5rem; width: 34px; text-align: center; flex-shrink: 0; margin-top: 2px; }
+.src-main { flex: 1; }
+.src-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
+.src-name {
+  font-family: var(--font-d);
+  font-size: .92rem; font-weight: 700;
+  color: var(--text);
+}
+.src-badge {
+  font-size: .58rem; text-transform: uppercase;
+  letter-spacing: .14em; padding: 2px 8px;
+  border-radius: 20px; white-space: nowrap;
+}
+.b-voice { background: rgba(0,229,255,.1); color: var(--cyan); }
+.b-music { background: rgba(167,139,250,.1); color: var(--violet); }
+.b-environment { background: rgba(0,255,136,.1); color: var(--green); }
+.b-noise { background: rgba(255,149,0,.1); color: var(--amber); }
+
+.src-desc {
+  font-size: .76rem; color: var(--text-dim);
+  line-height: 1.55; margin-bottom: 8px;
+}
+
+.src-tags {
+  display: flex; flex-wrap: wrap; gap: 5px;
+}
+.src-tag {
+  display: flex; align-items: center; gap: 4px;
+  font-size: .64rem;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 5px;
+  padding: 3px 8px;
+  color: var(--text-dim);
+}
+.src-tag b { color: var(--text); font-weight: 600; }
+
+.src-quote {
+  font-size: .72rem;
+  color: var(--text-dim);
+  font-style: italic;
+  padding: 8px 14px 12px 60px;
+  line-height: 1.55;
+  border-top: 1px solid var(--border2);
+  position: relative;
+}
+.src-quote::before {
+  content: '"';
+  position: absolute; left: 36px; top: 4px;
+  font-size: 1.8rem; color: var(--cyan); opacity: .25;
+  font-family: Georgia, serif; line-height: 1;
+}
+
+.src-topics {
+  padding: 8px 14px 12px 60px;
+  border-top: 1px solid var(--border2);
+  display: flex; flex-wrap: wrap; gap: 5px;
+}
+.topic-chip {
+  font-size: .62rem;
+  background: rgba(0,229,255,.06);
+  border: 1px solid rgba(0,229,255,.12);
+  border-radius: 4px;
+  padding: 2px 8px;
+  color: var(--cyan);
+}
+
+.meta-row {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border2);
+  background: rgba(0,0,0,.15);
+}
+.meta-pill {
+  font-size: .62rem;
+  padding: 3px 9px;
+  border-radius: 20px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.06);
+  color: var(--text-dim);
+}
+.meta-pill span { color: var(--text); }
+
+.ai-summary {
       font-size: .78rem; color: var(--text-dim);
       padding: 12px 14px; margin-bottom: 10px;
       border: 1px solid var(--border); border-radius: 8px;
@@ -978,19 +1079,41 @@ async function analyzeWithClaude(transcription) {
 
   if (!key) { showAiFallback('Groq API key required for AI source identification.'); return; }
 
-  const safeText = transcription.slice(0, 2000).replace(/"/g, "'").replace(/[\x00-\x1F]/g, ' ');
-  const prompt = `Analyze this audio transcription. Respond with ONLY a JSON object, nothing else before or after it.
+  const safeText = transcription.slice(0, 2500).replace(/"/g, "'").replace(/[\x00-\x1F]/g, ' ');
+  const prompt = `You are an expert forensic audio analyst. Deeply analyze this transcription and identify every distinct sound source with rich detail.
 
-Schema (use exact field names):
-{"sources":[{"name":"string","type":"voice or music or environment or noise","icon":"emoji","description":"string"}],"speakerCount":1,"summary":"string"}
+Respond with ONLY a JSON object — no markdown, no extra text, nothing outside the braces.
 
-Rules:
-- type must be exactly one of: voice, music, environment, noise
-- Keep all string values short (under 100 chars), avoid quotes inside strings
-- List each distinct speaker or sound source as a separate entry
-- Do NOT wrap in markdown or add any text outside the JSON
+For VOICE sources include: tone, pace, emotion, dominance (e.g. "primary ~70%"), topics array, and a short verbatim quote.
+For MUSIC/ENVIRONMENT/NOISE sources include: intensity, occurrence, and character.
 
-Transcription: ${safeText}`;
+Exact schema — no deviations:
+{
+  "sources": [
+    {
+      "name": "Speaker 1 (or descriptive label)",
+      "type": "voice",
+      "icon": "emoji",
+      "description": "What this person is saying and their role in the conversation",
+      "tone": "e.g. calm and authoritative",
+      "pace": "e.g. moderate, deliberate",
+      "emotion": "e.g. engaged, curious",
+      "dominance": "e.g. primary speaker ~65%",
+      "topics": ["topic1", "topic2", "topic3"],
+      "quote": "short verbatim excerpt from transcription"
+    }
+  ],
+  "speakerCount": 1,
+  "audioQuality": "clear / muffled / noisy / echo",
+  "backgroundNoise": "describe the acoustic environment",
+  "summary": "2-3 sentence detailed summary of the recording content and dynamics"
+}
+
+For non-voice sources use: name, type, icon, description, intensity (soft/moderate/loud), occurrence (throughout/briefly/at start/at end), character.
+All string values must be under 120 chars. Never use double quotes inside string values.
+
+Transcription to analyze:
+${safeText}`;
 
   try {
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -1001,8 +1124,8 @@ Transcription: ${safeText}`;
       },
       body: JSON.stringify({
         model,
-        max_tokens: 1000,
-        temperature: 0.3,
+        max_tokens: 1500,
+        temperature: 0.2,
         messages: [
           { role: 'system', content: 'You are an audio analyst. Always respond with only a valid JSON object, no other text.' },
           { role: 'user',   content: prompt }
@@ -1030,22 +1153,62 @@ Transcription: ${safeText}`;
 function renderAiSources(analysis) {
   let html = '';
 
-  if (analysis.summary) {
-    html += `<div class="ai-summary">${analysis.summary}</div>`;
+  // Summary + meta row
+  if (analysis.summary || analysis.audioQuality || analysis.backgroundNoise) {
+    let metaHtml = '';
+    if (analysis.audioQuality)   metaHtml += `<div class="meta-pill">Quality: <span>${analysis.audioQuality}</span></div>`;
+    if (analysis.backgroundNoise) metaHtml += `<div class="meta-pill">Environment: <span>${analysis.backgroundNoise}</span></div>`;
+    if (analysis.speakerCount)   metaHtml += `<div class="meta-pill">Speakers: <span>${analysis.speakerCount}</span></div>`;
+
+    html += `<div class="ai-summary">${analysis.summary || ''}</div>`;
+    if (metaHtml) html += `<div class="meta-row" style="margin-bottom:10px;border-radius:8px;border:1px solid var(--border);">${metaHtml}</div>`;
   }
 
   if (analysis.sources?.length) {
     analysis.sources.forEach(s => {
-      const badge = `b-${s.type || 'noise'}`;
-      const label = (s.type || 'unknown').toUpperCase();
+      const type  = s.type || 'noise';
+      const badge = `b-${type}`;
+      const label = type.toUpperCase();
+      const isVoice = type === 'voice';
+
+      // Build tags row
+      let tags = '';
+      if (isVoice) {
+        if (s.tone)       tags += `<div class="src-tag">🎭 <b>Tone</b> ${s.tone}</div>`;
+        if (s.pace)       tags += `<div class="src-tag">⏱ <b>Pace</b> ${s.pace}</div>`;
+        if (s.emotion)    tags += `<div class="src-tag">💬 <b>Emotion</b> ${s.emotion}</div>`;
+        if (s.dominance)  tags += `<div class="src-tag">📊 <b>Share</b> ${s.dominance}</div>`;
+      } else {
+        if (s.intensity)  tags += `<div class="src-tag">🔊 <b>Level</b> ${s.intensity}</div>`;
+        if (s.occurrence) tags += `<div class="src-tag">⏳ <b>When</b> ${s.occurrence}</div>`;
+        if (s.character)  tags += `<div class="src-tag">🎨 <b>Character</b> ${s.character}</div>`;
+      }
+
+      // Topics chips
+      let topicsHtml = '';
+      if (isVoice && Array.isArray(s.topics) && s.topics.length) {
+        topicsHtml = `<div class="src-topics">${s.topics.map(t => `<div class="topic-chip">${t}</div>`).join('')}</div>`;
+      }
+
+      // Quote
+      const quoteHtml = (isVoice && s.quote)
+        ? `<div class="src-quote">${s.quote}</div>` : '';
+
       html += `
-        <div class="ai-item">
-          <div class="ai-icon">${s.icon || '🔊'}</div>
-          <div class="ai-info">
-            <div class="ai-name">${s.name}</div>
-            <div class="ai-desc">${s.description}</div>
+        <div class="src-card">
+          <div class="src-card-top">
+            <div class="src-icon">${s.icon || '🔊'}</div>
+            <div class="src-main">
+              <div class="src-header">
+                <div class="src-name">${s.name}</div>
+                <div class="src-badge ${badge}">${label}</div>
+              </div>
+              <div class="src-desc">${s.description || ''}</div>
+              ${tags ? `<div class="src-tags">${tags}</div>` : ''}
+            </div>
           </div>
-          <div class="ai-badge ${badge}">${label}</div>
+          ${topicsHtml}
+          ${quoteHtml}
         </div>`;
     });
   }
