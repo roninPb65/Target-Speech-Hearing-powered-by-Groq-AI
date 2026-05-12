@@ -546,16 +546,25 @@
     <div id="cfgPanel">
       <div class="cfg-grid">
         <div class="field">
-          <label>Groq API Key</label>
+          <label>Groq API Key <span style="opacity:.5">(transcription + analysis)</span></label>
           <input type="password" id="groqKey" placeholder="gsk_..." value="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" />
         </div>
         <div class="field">
-          <label>AI Analysis Model</label>
+          <label>Cerebras API Key <span style="opacity:.5">(better multi-speaker analysis)</span></label>
+          <input type="password" id="cerebrasKey" placeholder="csk-..." value="csk-kh2xv6xmrcnmy588rwevh3ek89nttjdvn4hhetvfjp698eje" />
+        </div>
+        <div class="field">
+          <label>Analysis Provider</label>
+          <select id="providerSel" onchange="updateModelList()">
+            <option value="cerebras">Cerebras (Recommended)</option>
+            <option value="groq">Groq</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Analysis Model</label>
           <select id="analysisMdl">
-            <option value="llama-3.3-70b-versatile" selected>Llama 3.3 70B (Best)</option>
-            <option value="llama3-8b-8192">Llama 3 8B (Fastest)</option>
-            <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
-            <option value="gemma2-9b-it">Gemma 2 9B</option>
+            <option value="llama-3.3-70b" selected>Llama 3.3 70B — Best accuracy</option>
+            <option value="llama3.1-8b">Llama 3.1 8B — Fastest</option>
           </select>
         </div>
         <div class="field">
@@ -642,8 +651,27 @@ const canvas = $('vizCanvas');
 const ctx2d = canvas.getContext('2d');
 
 // ── STORAGE ──────────────────────────────────────────────────────────────
-$('groqKey').value = localStorage.getItem('tgh_groq') || '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';
-$('groqKey').addEventListener('change', e => localStorage.setItem('tgh_groq', e.target.value));
+$('groqKey').value     = localStorage.getItem('tgh_groq') || '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';
+$('cerebrasKey').value = localStorage.getItem('tgh_cerebras') || '';
+$('providerSel').value = localStorage.getItem('tgh_provider') || 'cerebras';
+$('groqKey').addEventListener('change',     e => localStorage.setItem('tgh_groq',      e.target.value));
+$('cerebrasKey').addEventListener('change', e => localStorage.setItem('tgh_cerebras',  e.target.value));
+$('providerSel').addEventListener('change', e => localStorage.setItem('tgh_provider',  e.target.value));
+updateModelList();
+
+// ── MODEL LIST ────────────────────────────────────────────────────────────
+function updateModelList() {
+  const provider = $('providerSel').value;
+  const sel = $('analysisMdl');
+  sel.innerHTML = provider === 'cerebras'
+    ? `<option value="llama-3.3-70b" selected>Llama 3.3 70B — Best accuracy</option>
+       <option value="llama3.1-8b">Llama 3.1 8B — Fastest</option>`
+    : `<option value="llama-3.3-70b-versatile" selected>Llama 3.3 70B Versatile</option>
+       <option value="llama3-8b-8192">Llama 3 8B</option>
+       <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
+       <option value="gemma2-9b-it">Gemma 2 9B</option>`;
+}
+
 
 // ── CONFIG TOGGLE ────────────────────────────────────────────────────────
 function toggleCfg() {
@@ -1072,85 +1100,109 @@ function extractJSON(raw) {
   } catch(_) { return null; }
 }
 
-// ── GROQ AI ANALYSIS ─────────────────────────────────────────────────────
+// ── AI ANALYSIS (Groq or Cerebras) ───────────────────────────────────────
 async function analyzeWithClaude(transcription) {
-  const key   = $('groqKey').value.trim();
-  const model = $('analysisMdl').value;
+  const provider = $('providerSel').value;
+  const model    = $('analysisMdl').value;
+  const key      = provider === 'cerebras'
+    ? $('cerebrasKey').value.trim()
+    : $('groqKey').value.trim();
+  const endpoint = provider === 'cerebras'
+    ? 'https://api.cerebras.ai/v1/chat/completions'
+    : 'https://api.groq.com/openai/v1/chat/completions';
 
-  if (!key) { showAiFallback('Groq API key required for AI source identification.'); return; }
+  if (!key) {
+    showAiFallback(`${provider === 'cerebras' ? 'Cerebras' : 'Groq'} API key required. Add it in Configuration above.`);
+    return;
+  }
 
-  const safeText = transcription.slice(0, 2500).replace(/"/g, "'").replace(/[\x00-\x1F]/g, ' ');
-  const prompt = `You are an expert forensic audio analyst. Deeply analyze this transcription and identify every distinct sound source with rich detail.
+  // Update panel label to show active provider
+  const panelLabel = document.querySelector('#sourcesSec .panel:last-child .plabel');
+  if (panelLabel) panelLabel.textContent = `AI Sound Source Identification — ${provider === 'cerebras' ? 'Cerebras' : 'Groq'} · ${model}`;
 
-Respond with ONLY a JSON object — no markdown, no extra text, nothing outside the braces.
+  const safeText = transcription.slice(0, 3500).replace(/"/g, "'").replace(/[\x00-\x1F]/g, ' ');
 
-For VOICE sources include: tone, pace, emotion, dominance (e.g. "primary ~70%"), topics array, and a short verbatim quote.
-For MUSIC/ENVIRONMENT/NOISE sources include: intensity, occurrence, and character.
+  // Count rough word groups to hint at conversation density
+  const wordCount = safeText.split(/\s+/).length;
+  const turnHint  = wordCount > 200
+    ? 'This is a multi-turn conversation — look carefully for speaker changes indicated by topic shifts, question-answer pairs, different vocabulary, and conversational hand-offs.'
+    : 'Analyze carefully for any speaker variety.';
 
-Exact schema — no deviations:
+  const systemMsg = `You are an expert forensic audio analyst specialising in speaker diarisation and acoustic scene analysis.
+Your job is to identify EVERY distinct voice and sound source — even if the transcription has no speaker labels.
+You MUST output only a single valid JSON object. No prose, no markdown, no explanation before or after the JSON.`;
+
+  const userMsg = `TASK: Deeply analyse the transcription below and identify ALL distinct sound sources.
+
+CRITICAL RULES FOR SPEAKER DETECTION:
+- Assume there may be 2–6 different speakers even if the text has no labels
+- ${turnHint}
+- Clues for different speakers: topic changes, question vs answer, formal vs informal style, first-person shifts (I vs you), names being addressed, interruptions, "as I said" / "you mentioned" patterns
+- Give each identified speaker a meaningful label based on their ROLE or CONTENT (e.g. "Interviewer", "Technical Expert", "Customer", "Host") — not just "Speaker 1"
+- If you are confident a single person spoke, say so; do not fabricate speakers
+- Also identify any non-voice sounds: music, ambient noise, keyboard, laughter, applause, etc.
+
+OUTPUT — return ONLY this JSON, nothing else:
 {
   "sources": [
     {
-      "name": "Speaker 1 (or descriptive label)",
+      "name": "descriptive role label",
       "type": "voice",
-      "icon": "emoji",
-      "description": "What this person is saying and their role in the conversation",
-      "tone": "e.g. calm and authoritative",
-      "pace": "e.g. moderate, deliberate",
-      "emotion": "e.g. engaged, curious",
-      "dominance": "e.g. primary speaker ~65%",
-      "topics": ["topic1", "topic2", "topic3"],
-      "quote": "short verbatim excerpt from transcription"
+      "icon": "single emoji",
+      "description": "what this person says and their conversational role",
+      "tone": "vocal quality e.g. calm, assertive, hesitant",
+      "pace": "speaking pace e.g. rapid, deliberate, varied",
+      "emotion": "emotional state e.g. enthusiastic, nervous, neutral",
+      "dominance": "share of speaking time e.g. primary ~45%",
+      "topics": ["main topic 1", "main topic 2", "main topic 3"],
+      "quote": "verbatim excerpt that best represents this speaker"
     }
   ],
-  "speakerCount": 1,
-  "audioQuality": "clear / muffled / noisy / echo",
-  "backgroundNoise": "describe the acoustic environment",
-  "summary": "2-3 sentence detailed summary of the recording content and dynamics"
+  "speakerCount": 2,
+  "audioQuality": "clear / muffled / noisy / distant / echo",
+  "backgroundNoise": "concise description of acoustic environment",
+  "summary": "detailed 3-sentence summary covering: who is speaking, what is discussed, and the conversational dynamic"
 }
 
-For non-voice sources use: name, type, icon, description, intensity (soft/moderate/loud), occurrence (throughout/briefly/at start/at end), character.
-All string values must be under 120 chars. Never use double quotes inside string values.
+For non-voice sources replace voice fields with: intensity (soft/moderate/loud), occurrence (continuous/intermittent/briefly), character (describe the sound).
+Keep every string value under 130 chars. Never use double-quote characters inside any string value.
 
-Transcription to analyze:
+TRANSCRIPTION:
 ${safeText}`;
 
   try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const res = await fetch(endpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + key
-      },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
       body: JSON.stringify({
         model,
-        max_tokens: 1500,
-        temperature: 0.2,
+        max_tokens: 2000,
+        temperature: 0.15,
         messages: [
-          { role: 'system', content: 'You are an audio analyst. Always respond with only a valid JSON object, no other text.' },
-          { role: 'user',   content: prompt }
+          { role: 'system', content: systemMsg },
+          { role: 'user',   content: userMsg   }
         ]
       })
     });
 
     if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error?.message || `HTTP ${res.status}`);
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error?.message || `HTTP ${res.status} from ${provider}`);
     }
 
-    const data  = await res.json();
-    const raw   = data.choices?.[0]?.message?.content || '';
+    const data     = await res.json();
+    const raw      = data.choices?.[0]?.message?.content || '';
     const analysis = extractJSON(raw);
-    if (!analysis) throw new Error('Could not parse AI response as JSON');
-    renderAiSources(analysis);
+    if (!analysis) throw new Error('Could not parse AI response — try again');
+    renderAiSources(analysis, provider);
 
   } catch(e) {
-    console.warn('Groq analysis failed:', e);
-    showAiFallback('AI analysis failed: ' + e.message);
+    console.warn('AI analysis failed:', e);
+    showAiFallback(`Analysis failed (${provider}): ${e.message}`);
   }
 }
 
-function renderAiSources(analysis) {
+function renderAiSources(analysis, provider) {
   let html = '';
 
   // Summary + meta row
@@ -1159,6 +1211,7 @@ function renderAiSources(analysis) {
     if (analysis.audioQuality)   metaHtml += `<div class="meta-pill">Quality: <span>${analysis.audioQuality}</span></div>`;
     if (analysis.backgroundNoise) metaHtml += `<div class="meta-pill">Environment: <span>${analysis.backgroundNoise}</span></div>`;
     if (analysis.speakerCount)   metaHtml += `<div class="meta-pill">Speakers: <span>${analysis.speakerCount}</span></div>`;
+    if (provider) metaHtml += `<div class="meta-pill" style="border-color:rgba(0,229,255,.2);color:var(--cyan)">via <span style="color:var(--cyan)">${provider === 'cerebras' ? '🧠 Cerebras' : '⚡ Groq'}</span></div>`;
 
     html += `<div class="ai-summary">${analysis.summary || ''}</div>`;
     if (metaHtml) html += `<div class="meta-row" style="margin-bottom:10px;border-radius:8px;border:1px solid var(--border);">${metaHtml}</div>`;
