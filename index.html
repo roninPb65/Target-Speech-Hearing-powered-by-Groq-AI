@@ -1182,9 +1182,33 @@ function extractJSON(raw) {
 }
 
 // ── AI ANALYSIS (Groq or Cerebras) ───────────────────────────────────────
+// Cerebras fallback order (production models first for rate-limit resilience)
+const CEREBRAS_FALLBACK = [
+  'gpt-oss-120b',
+  'llama3.1-8b',
+  'qwen-3-235b-a22b-instruct-2507',
+  'zai-glm-4.7',
+];
+
+async function callAnalysisAPI(endpoint, key, model, messages) {
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+    body: JSON.stringify({ model, max_tokens: 2000, temperature: 0.15, messages })
+  });
+  const status = res.status;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const e = new Error(err.error?.message || `HTTP ${status}`);
+    e.status = status;
+    throw e;
+  }
+  return res.json();
+}
+
 async function analyzeWithClaude(transcription) {
   const provider = $('providerSel').value;
-  const model    = $('analysisMdl').value;
+  const model    = $('analysisMdl').value.trim();
   const key      = provider === 'cerebras'
     ? $('cerebrasKey').value.trim()
     : $('groqKey').value.trim();
@@ -1197,13 +1221,7 @@ async function analyzeWithClaude(transcription) {
     return;
   }
 
-  // Update panel label to show active provider
-  const panelLabel = document.querySelector('#sourcesSec .panel:last-child .plabel');
-  if (panelLabel) panelLabel.textContent = `AI Sound Source Identification — ${provider === 'cerebras' ? 'Cerebras' : 'Groq'} · ${model}`;
-
-  const safeText = transcription.slice(0, 3500).replace(/"/g, "'").replace(/[\x00-\x1F]/g, ' ');
-
-  // Count rough word groups to hint at conversation density
+  const safeText  = transcription.slice(0, 3500).replace(/"/g, "'").replace(/[\x00-\x1F]/g, ' ');
   const wordCount = safeText.split(/\s+/).length;
   const turnHint  = wordCount > 200
     ? 'This is a multi-turn conversation — look carefully for speaker changes indicated by topic shifts, question-answer pairs, different vocabulary, and conversational hand-offs.'
@@ -1251,39 +1269,67 @@ Keep every string value under 130 chars. Never use double-quote characters insid
 TRANSCRIPTION:
 ${safeText}`;
 
-  try {
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-      body: JSON.stringify({
-        model,
-        max_tokens: 2000,
-        temperature: 0.15,
-        messages: [
-          { role: 'system', content: systemMsg },
-          { role: 'user',   content: userMsg   }
-        ]
-      })
-    });
+  const messages = [
+    { role: 'system', content: systemMsg },
+    { role: 'user',   content: userMsg   }
+  ];
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error?.message || `HTTP ${res.status} from ${provider}`);
+  // Build fallback queue: selected model first, then remaining fallbacks
+  const fallbackQueue = provider === 'cerebras'
+    ? [model, ...CEREBRAS_FALLBACK.filter(m => m !== model)]
+    : [model];
+
+  let lastError = null;
+
+  for (const tryModel of fallbackQueue) {
+    // Show which model is being tried
+    const panelLabel = document.querySelector('#sourcesSec .panel:last-child .plabel');
+    if (panelLabel) panelLabel.textContent =
+      `AI Source Identification — ${provider === 'cerebras' ? '🧠 Cerebras' : '⚡ Groq'} · ${tryModel}`;
+
+    showAnalyzing(`Trying ${tryModel}…`);
+
+    try {
+      const data     = await callAnalysisAPI(endpoint, key, tryModel, messages);
+      const raw      = data.choices?.[0]?.message?.content || '';
+      const analysis = extractJSON(raw);
+      if (!analysis) throw new Error('Could not parse response');
+
+      // Success — update model field to reflect what actually worked
+      $('analysisMdl').value = tryModel;
+      renderAiSources(analysis, provider, tryModel);
+      return;
+
+    } catch(e) {
+      lastError = e;
+      console.warn(`Model ${tryModel} failed (${e.status || '?'}):`, e.message);
+
+      if (e.status === 429) {
+        showAnalyzing(`⚠ ${tryModel} rate-limited — trying next model…`);
+        await new Promise(r => setTimeout(r, 800)); // brief pause before next attempt
+        continue;
+      }
+      if (e.status === 404) {
+        showAnalyzing(`⚠ ${tryModel} not found — trying next model…`);
+        continue;
+      }
+      // Other errors (auth, network) — don't retry
+      break;
     }
-
-    const data     = await res.json();
-    const raw      = data.choices?.[0]?.message?.content || '';
-    const analysis = extractJSON(raw);
-    if (!analysis) throw new Error('Could not parse AI response — try again');
-    renderAiSources(analysis, provider);
-
-  } catch(e) {
-    console.warn('AI analysis failed:', e);
-    showAiFallback(`Analysis failed (${provider}): ${e.message}`);
   }
+
+  // All fallbacks exhausted
+  const hint = lastError?.status === 429
+    ? 'All Cerebras models are rate-limited. Wait a moment and try again, or switch to Groq.'
+    : lastError?.message || 'Unknown error';
+  showAiFallback(`Analysis failed: ${hint}`);
 }
 
-function renderAiSources(analysis, provider) {
+function showAnalyzing(msg) {
+  $('aiContent').innerHTML = `<div class="analyzing"><div class="spin"></div>${msg}</div>`;
+}
+
+function renderAiSources(analysis, provider, usedModel) {
   let html = '';
 
   // Summary + meta row
@@ -1292,7 +1338,7 @@ function renderAiSources(analysis, provider) {
     if (analysis.audioQuality)   metaHtml += `<div class="meta-pill">Quality: <span>${analysis.audioQuality}</span></div>`;
     if (analysis.backgroundNoise) metaHtml += `<div class="meta-pill">Environment: <span>${analysis.backgroundNoise}</span></div>`;
     if (analysis.speakerCount)   metaHtml += `<div class="meta-pill">Speakers: <span>${analysis.speakerCount}</span></div>`;
-    if (provider) metaHtml += `<div class="meta-pill" style="border-color:rgba(0,229,255,.2);color:var(--cyan)">via <span style="color:var(--cyan)">${provider === 'cerebras' ? '🧠 Cerebras' : '⚡ Groq'}</span></div>`;
+    if (provider) metaHtml += `<div class="meta-pill" style="border-color:rgba(0,229,255,.2);color:var(--cyan)">via <span style="color:var(--cyan)">${provider === 'cerebras' ? '🧠 Cerebras' : '⚡ Groq'}</span>${usedModel ? ' · <span style="opacity:.7">' + usedModel + '</span>' : ''}</div>`;
 
     html += `<div class="ai-summary">${analysis.summary || ''}</div>`;
     if (metaHtml) html += `<div class="meta-row" style="margin-bottom:10px;border-radius:8px;border:1px solid var(--border);">${metaHtml}</div>`;
